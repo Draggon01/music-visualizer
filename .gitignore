@@ -34,3 +34,4 @@ build/
 
 ### custom ###
 /frontend/node_modules/
+/.mvn
