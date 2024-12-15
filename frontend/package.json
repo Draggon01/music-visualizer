@@ -1,0 +1,27 @@
+{
+  "name": "frontend",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@stomp/stompjs": "^7.0.0",
+    "lit": "^3.2.1",
+    "sockjs-client": "^1.6.1",
+    "vite": "^6.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/sockjs-client": "^1.5.4",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.7.2"
+  }
+}
