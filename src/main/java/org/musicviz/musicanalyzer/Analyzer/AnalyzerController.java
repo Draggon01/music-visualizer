@@ -1,6 +1,7 @@
 package org.musicviz.musicanalyzer.Analyzer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.psambit9791.jdsp.filter.Butterworth;
 import org.jtransforms.fft.DoubleFFT_1D;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Controller;
@@ -8,20 +9,22 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
 import javax.sound.sampled.*;
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
 
 @Controller
 public class AnalyzerController {
     HashMap<String, WebSocketSession> sessionMap = new HashMap<>();
-    private final int bufferSize = 2048;
+    private final int bufferSize = 2048; //TODO: prob change to 1048 for better output
     private final int packagingSize = 8;
     private byte[] buffer = new byte[bufferSize];
     private AudioInputStream audioStream;
 
     public AnalyzerController() {
-        AudioFormat format = new AudioFormat(44100, 16, 2, true, false);
+        AudioFormat format = new AudioFormat(48000, 16, 2, true, false);
         // Set up the target data line
         DataLine.Info info = new DataLine.Info(TargetDataLine.class, format);
         TargetDataLine targetLine = null;
@@ -29,6 +32,7 @@ public class AnalyzerController {
             targetLine = (TargetDataLine) AudioSystem.getLine(info);
             targetLine.open(format);
             targetLine.start();
+            disconnectAllInputsFromAudio("alsa_capture.java");
             autoRouteAudio("VirtualSink", "alsa_capture.java");
             audioStream = new AudioInputStream(targetLine);
         } catch (LineUnavailableException e) {
@@ -58,9 +62,10 @@ public class AnalyzerController {
         AnalyzerData analyzerData = new AnalyzerData(44100, null, null);
         AnalyzerData lastAnalyzerData = null;
 
+        Butterworth flt = new Butterworth(48000);
         System.out.println("fft for frequencies:");
         for (int i = 0; i < bufferSize / 8; i++) {
-            System.out.println(i * ((44100 / (bufferSize / 4))));
+            System.out.println(i * ((48000 / (bufferSize / 4))));
         }
 
 
@@ -89,11 +94,13 @@ public class AnalyzerController {
                 double[] nextTest = new double[bufferSize];
                 nextTest = Arrays.copyOf(testRightChannel, bufferSize);
 
+                nextTest = flt.lowPassFilter(nextTest, 2, 20000);
+
                 fft.realForward(leftChannel);
                 testFFT.realForward(nextTest);
                 for (int i = 0; i < bufferSize / 2; i++) {
                     double testRightMagnitude = Math.sqrt(nextTest[i * 2] * nextTest[i * 2] + nextTest[i * 2 + 1] * nextTest[i * 2 + 1]);
-                    System.out.printf("Freq %d Hz: Right %.2f%n", i * (44100 / (bufferSize)), testRightMagnitude);
+                    // System.out.printf("Freq %d Hz: Right %.2f%n", i * (44100 / (bufferSize)), testRightMagnitude);
                 }
                 //testFFT.realForward(nextTest);
                 //testFFT.realForward(nextTest);
@@ -125,6 +132,39 @@ public class AnalyzerController {
     //TODO: synchronize sesseion array with the startStreaming function.
     public void endStreaming(WebSocketSession session) {
         sessionMap.remove(session.getId());
+    }
+
+    private static void disconnectAllInputsFromAudio(String node) {
+        try {
+            String getIdsCommand = "pw-link -l -I | grep java";
+            Process p = Runtime.getRuntime().exec(getIdsCommand);
+            String tmp;
+            int rem;
+            BufferedReader bufferedReader = p.inputReader(StandardCharsets.UTF_8);
+            while (bufferedReader.ready()) {
+                tmp = bufferedReader.readLine();
+                if (tmp.contains("|") && tmp.contains("alsa_capture.java")) {
+                    tmp = tmp.split(" ")[1];
+                    rem = Integer.parseInt(tmp);
+
+                    // Construct the pw-link command
+                    String command = String.format("pw-link -d %d", rem);
+
+                    // Execute the command
+                    Process process = Runtime.getRuntime().exec(command);
+                    int exitCode = process.waitFor();
+
+                    if (exitCode == 0) {
+                        System.out.println("Successfully removed all input channels from node: " + node);
+                    } else {
+                        System.err.println("Failed to remove audio inputs. Exit code: " + exitCode);
+                    }
+                }
+            }
+            bufferedReader.close();
+        } catch (IOException | InterruptedException e) {
+            System.err.println("Error executing pw-link command: " + e.getMessage());
+        }
     }
 
     /**

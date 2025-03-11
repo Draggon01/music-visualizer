@@ -41,12 +41,12 @@ export class AnalyzerDemoElement extends LitElement {
             </div>
 
             <div style="display:flex; height: 50vh; width: 80vw; background-color: white">
-                ${this.showbarsleft(150)}
+                ${this.showBarsLeft(150)}
             </div>
         `;
     }
 
-    private showbarsleft(cnt: number) {
+    private showBarsLeft(cnt: number) {
         if (this.analyzerData) {
             let bars: TemplateResult[] = [];
 

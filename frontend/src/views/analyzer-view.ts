@@ -2,6 +2,7 @@ import {LitElement, html, css} from 'lit';
 import {customElement, property} from 'lit/decorators.js';
 import {AnalyzerData} from "../components/analyzer/analyzerData";
 import "../components/analyzer/analyzer-demo-element"
+import "../components/analyzer/analyzer-settings"
 @customElement('analyzer-view')
 export class AnalyzerView extends LitElement {
     static styles = css`
@@ -16,7 +17,7 @@ export class AnalyzerView extends LitElement {
     `;
 
     @property()
-    test?: AnalyzerData;
+    analyzerData?: AnalyzerData;
 
 
 
@@ -26,18 +27,17 @@ export class AnalyzerView extends LitElement {
         super.connectedCallback();
         this.socket.onmessage = (event) => {
             if(event.data.toString().includes("{")){
-                this.test = JSON.parse(event.data.toString());
+                this.analyzerData = JSON.parse(event.data.toString());
             }
         };
     }
 
     render() {
         return html`
-            <div>
-                ${this.test?.sampleRate ? this.test.sampleRate : 'item not set'}
-            </div>
-            <analyzer-demo-element .analyzerData="${this.test}">
-                
+            <analyzer-settings .analyzerData="${this.analyzerData}">
+            </analyzer-settings>
+            
+            <analyzer-demo-element .analyzerData="${this.analyzerData}">
             </analyzer-demo-element>
         `;
     }
