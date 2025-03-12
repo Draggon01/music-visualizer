@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Locale;
 
 @Controller
 public class AnalyzerController {
@@ -134,6 +135,11 @@ public class AnalyzerController {
         sessionMap.remove(session.getId());
     }
 
+    /**
+     * Automatically remove all inputs from a node using pipewire commands.
+     *
+     * @param node Name of the node to remove inputs (e.g., VirtualSink)
+     */
     private static void disconnectAllInputsFromAudio(String node) {
         try {
             String getIdsCommand = "pw-link -l -I | grep java";
@@ -144,8 +150,7 @@ public class AnalyzerController {
             while (bufferedReader.ready()) {
                 tmp = bufferedReader.readLine();
                 if (tmp.contains("|") && tmp.contains("alsa_capture.java")) {
-                    tmp = tmp.split(" ")[1];
-                    rem = Integer.parseInt(tmp);
+                    rem = findFirstNumberInString(tmp);
 
                     // Construct the pw-link command
                     String command = String.format("pw-link -d %d", rem);
@@ -175,9 +180,46 @@ public class AnalyzerController {
      */
     private static void autoRouteAudio(String outputNode, String inputNode) {
         try {
-            // Construct the pw-link command
-            String command = String.format("pw-link %s %s", outputNode, inputNode);
+            String tmp;
 
+            //get ids of output and input nodes
+            int outputNodeFl = 0;
+            int outputNodeFr = 0;
+            Process p = Runtime.getRuntime().exec("pw-link -o -I " + outputNode);
+            p.waitFor();
+            BufferedReader bufferedReader = p.inputReader(StandardCharsets.UTF_8);
+            while (bufferedReader.ready()) {
+                tmp = bufferedReader.readLine();
+                if (tmp.toLowerCase(Locale.ROOT).contains("fl")) {
+                    outputNodeFl = findFirstNumberInString(tmp);
+                }
+                if (tmp.toLowerCase(Locale.ROOT).contains("fr")) {
+                    outputNodeFr = findFirstNumberInString(tmp);
+                }
+            }
+
+            bufferedReader.close();
+
+
+            int inputNodeFl = 0;
+            int inputNodeFr = 0;
+            p = Runtime.getRuntime().exec("pw-link -i -I");
+            p.waitFor();
+            bufferedReader = p.inputReader(StandardCharsets.UTF_8);
+            while (bufferedReader.ready()) {
+                tmp = bufferedReader.readLine();
+                if (tmp.toLowerCase(Locale.ROOT).contains("fl") && tmp.toLowerCase(Locale.ROOT).contains(inputNode)) {
+                    inputNodeFl = findFirstNumberInString(tmp);
+                }
+                if (tmp.toLowerCase(Locale.ROOT).contains("fr") && tmp.toLowerCase(Locale.ROOT).contains(inputNode)) {
+                    inputNodeFr = findFirstNumberInString(tmp);
+                }
+            }
+
+            bufferedReader.close();
+
+            // Construct the pw-link command for fl
+            String command = String.format("pw-link %d %d", outputNodeFl, inputNodeFl);
             // Execute the command
             Process process = Runtime.getRuntime().exec(command);
             int exitCode = process.waitFor();
@@ -187,8 +229,37 @@ public class AnalyzerController {
             } else {
                 System.err.println("Failed to route audio. Exit code: " + exitCode);
             }
+
+            // Construct the pw-link command for fr
+            command = String.format("pw-link %d %d", outputNodeFr, inputNodeFr);
+            // Execute the command
+            process = Runtime.getRuntime().exec(command);
+            exitCode = process.waitFor();
+
+            if (exitCode == 0) {
+                System.out.println("Successfully routed audio from " + outputNode + " to " + inputNode);
+            } else {
+                System.err.println("Failed to route audio. Exit code: " + exitCode);
+            }
         } catch (IOException | InterruptedException e) {
             System.err.println("Error executing pw-link command: " + e.getMessage());
         }
+    }
+
+    private static int findFirstNumberInString(String string) {
+        int i;
+        int startInd = -1;
+        int endInd = -1;
+        for (i = 0; i < string.length(); i++) {
+            int val = string.charAt(i);
+            if (startInd == -1 && val >= '0' && val <= '9') {
+                startInd = i;
+            }
+            if (startInd != -1 && (val < '0' || val > '9')) {
+                endInd = i;
+                break;
+            }
+        }
+        return Integer.parseInt(string.substring(startInd, endInd));
     }
 }
