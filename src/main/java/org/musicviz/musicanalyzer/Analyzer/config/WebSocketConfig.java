@@ -1,10 +1,8 @@
 package org.musicviz.musicanalyzer.Analyzer.config;
 
 import org.musicviz.musicanalyzer.Analyzer.AnalyzerController;
-import org.musicviz.musicanalyzer.Analyzer.WebSocketEventHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.messaging.simp.config.MessageBrokerRegistry;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.config.annotation.*;
 
@@ -24,6 +22,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
                 .setAllowedOrigins("http://localhost:5173");
 //                .withSockJS();
     }
+
     @Bean
     WebSocketHandler webSocketHandler() {
         return new AnalyzerHandler(controller);

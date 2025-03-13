@@ -14,13 +14,7 @@ public class AnalyzerData {
     }
 
     public void optimize(AnalyzerData lastOne) {
-        this.moveLowFrequenciesToTheMiddle();
-        if (lastOne != null) {
-            //this.flattenWithLastOne(lastOne);
-        }
-//        this.makeMoreVisual();
-//        this.makeMoreVisual();
-//        this.boostValues();
+        //TODO: add optimizing
     }
 
     private void flattenWithLastOne(AnalyzerData lastOne) {

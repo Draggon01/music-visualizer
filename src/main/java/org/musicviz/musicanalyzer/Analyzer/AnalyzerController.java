@@ -19,13 +19,15 @@ import java.util.Locale;
 @Controller
 public class AnalyzerController {
     HashMap<String, WebSocketSession> sessionMap = new HashMap<>();
-    private final int bufferSize = 2048; //TODO: prob change to 1048 for better output
+    private final int bufferSize = 1024; //TODO: prob change to 1024 for better output
     private final int packagingSize = 8;
     private byte[] buffer = new byte[bufferSize];
     private AudioInputStream audioStream;
+    private boolean debug = false;
+    private final int sampleRate = 48000;
 
     public AnalyzerController() {
-        AudioFormat format = new AudioFormat(48000, 16, 2, true, false);
+        AudioFormat format = new AudioFormat(sampleRate, 16, 2, true, false);
         // Set up the target data line
         DataLine.Info info = new DataLine.Info(TargetDataLine.class, format);
         TargetDataLine targetLine = null;
@@ -52,26 +54,29 @@ public class AnalyzerController {
         //init vars for analysis
         int bytesRead;
         int dividedBufferSize = bufferSize / 4;
-        DoubleFFT_1D fft = new DoubleFFT_1D(dividedBufferSize);
-        DoubleFFT_1D testFFT = new DoubleFFT_1D(bufferSize);
-        double[] leftChannel = new double[dividedBufferSize];
+        DoubleFFT_1D fft = new DoubleFFT_1D(dividedBufferSize * 16);
+        double[] leftChannel = new double[dividedBufferSize * 16];
         double[] rightChannel = new double[dividedBufferSize];
         double[] testRightChannel = new double[bufferSize];
         double[] packedLeftChannel = new double[150];
         double[] packedRightChannel = new double[150];
         ObjectMapper objectMapper = new ObjectMapper();
-        AnalyzerData analyzerData = new AnalyzerData(44100, null, null);
+        AnalyzerData analyzerData = new AnalyzerData(sampleRate, null, null);
         AnalyzerData lastAnalyzerData = null;
 
-        Butterworth flt = new Butterworth(48000);
+        Butterworth flt = new Butterworth(sampleRate);
         System.out.println("fft for frequencies:");
-        for (int i = 0; i < bufferSize / 8; i++) {
-            System.out.println(i * ((48000 / (bufferSize / 4))));
+        for (int i = 0; i < dividedBufferSize * 8; i++) {
+            //System.out.println(i * ((sampleRate / (bufferSize / 4))));
+            System.out.println(i * ((sampleRate / (dividedBufferSize * 8))));
         }
 
 
         while (!sessionMap.isEmpty()) {
             while ((bytesRead = audioStream.read(buffer)) != -1 && !sessionMap.isEmpty()) {
+                for (int i = dividedBufferSize; i < dividedBufferSize * 16; i++) {
+                    leftChannel[i] = 0;
+                }
                 int si = 0;
                 for (int i = 0; i < bytesRead; i += 4, si++) { // 16-bit PCM samples (2 bytes per sample)
                     // Convert bytes to sample
@@ -84,38 +89,21 @@ public class AnalyzerController {
                     // Clamp to prevent overflow
                     sample = Math.max(-32768, Math.min(32767, sample));
                     rightChannel[si] = sample / 32768.0;
-
-
-                    testRightChannel[si] = testRightChannel[dividedBufferSize + si];
-                    testRightChannel[dividedBufferSize + si] = testRightChannel[dividedBufferSize * 2 + si];
-                    testRightChannel[dividedBufferSize * 2 + si] = testRightChannel[dividedBufferSize * 3 + si];
-                    testRightChannel[dividedBufferSize * 3 + si] = rightChannel[si];
                 }
 
-                double[] nextTest = new double[bufferSize];
-                nextTest = Arrays.copyOf(testRightChannel, bufferSize);
-
-                nextTest = flt.lowPassFilter(nextTest, 2, 20000);
-
+                leftChannel = flt.lowPassFilter(leftChannel, 1, 20000);
                 fft.realForward(leftChannel);
-                testFFT.realForward(nextTest);
-                for (int i = 0; i < bufferSize / 2; i++) {
-                    double testRightMagnitude = Math.sqrt(nextTest[i * 2] * nextTest[i * 2] + nextTest[i * 2 + 1] * nextTest[i * 2 + 1]);
-                    // System.out.printf("Freq %d Hz: Right %.2f%n", i * (44100 / (bufferSize)), testRightMagnitude);
-                }
-                //testFFT.realForward(nextTest);
-                //testFFT.realForward(nextTest);
-                //testFFT.realForward(nextTest);
 
-                //fft.realForward(rightChannel);
-
-                for (int i = 0; i < 150; i++) {
+                for (int i = 0; i < 127; i++) {
                     double leftMagnitude = Math.sqrt(leftChannel[i * 2] * leftChannel[i * 2] + leftChannel[i * 2 + 1] * leftChannel[i * 2 + 1]);
                     double rightMagnitude = Math.sqrt(rightChannel[i * 2] * rightChannel[i * 2] + rightChannel[i * 2 + 1] * rightChannel[i * 2 + 1]);
                     packedLeftChannel[i] = leftMagnitude;
                     packedRightChannel[i] = rightMagnitude;
-                    //System.out.printf("Freq %d Hz: Left %.2f, Right %.2f%n", i * (44100 / (bufferSize / 4)), leftMagnitude, rightMagnitude);
+                    if (debug) {
+                        System.out.printf("Freq %d Hz: Left %.2f, Right %.2f%n", i * (sampleRate / (bufferSize / 4)), leftMagnitude, rightMagnitude);
+                    }
                 }
+
                 analyzerData.setRightFFTData(packedRightChannel);
                 analyzerData.setLeftFFTData(packedLeftChannel);
                 analyzerData.optimize(lastAnalyzerData);
@@ -124,7 +112,7 @@ public class AnalyzerController {
                 for (WebSocketSession value : sessionMap.values()) {
                     value.sendMessage(new TextMessage(json));
                 }
-                lastAnalyzerData = new AnalyzerData(44100, analyzerData.getLeftFFTData(), analyzerData.getRightFFTData());
+                lastAnalyzerData = new AnalyzerData(sampleRate, analyzerData.getLeftFFTData(), analyzerData.getRightFFTData());
             }
         }
         Thread.currentThread().interrupt();
@@ -143,9 +131,10 @@ public class AnalyzerController {
     private static void disconnectAllInputsFromAudio(String node) {
         try {
             String getIdsCommand = "pw-link -l -I | grep java";
-            Process p = Runtime.getRuntime().exec(getIdsCommand);
             String tmp;
             int rem;
+            Process p = Runtime.getRuntime().exec(getIdsCommand);
+            p.waitFor();
             BufferedReader bufferedReader = p.inputReader(StandardCharsets.UTF_8);
             while (bufferedReader.ready()) {
                 tmp = bufferedReader.readLine();
